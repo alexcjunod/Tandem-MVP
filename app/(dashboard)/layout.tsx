@@ -14,7 +14,8 @@ import {
   Home,
   ChevronLeft,
   ChevronRight,
-  Command 
+  Command,
+  Target
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -31,6 +32,7 @@ const links = [
   { name: "Goals", icon: BarChart3, href: "/goals" },
   { name: "Community", icon: Users, href: "/community" },
   { name: "Settings", icon: Settings, href: "/settings" },
+  { name: "Create New Goal", icon: Target, href: "/onboarding" },
 ]
 
 function Sidebar({ className, isCollapsed, onToggle }: SidebarProps) {
