@@ -14,43 +14,19 @@ interface AIChatProps {
   onGoalCreated?: (goal: any) => void
 }
 
-// Input validation
-function validateInput(input: string, step: number): { isValid: boolean; message?: string } {
-  switch(step) {
-    case 1: // Goal
-      if (input.length < 10) {
-        return { 
-          isValid: false, 
-          message: "Could you elaborate a bit more on your goal? This will help me understand better."
-        }
-      }
-      break
-    case 2: // Vision
-      if (!input.includes(' because ') && !input.includes(' so that ') && input.length < 30) {
-        return { 
-          isValid: false, 
-          message: "Could you share more about why this goal matters to you? What motivates you to achieve it?"
-        }
-      }
-      break
-    case 3: // Metrics
-      if (!input.includes('\n') && !input.includes('•') && !input.includes('-')) {
-        return { 
-          isValid: false, 
-          message: "Could you break down your metrics into multiple points? This will help track progress better."
-        }
-      }
-      break
-    case 4: // Timeline
-      if (!input.toLowerCase().match(/\d+\s*(day|week|month|year)/)) {
-        return { 
-          isValid: false, 
-          message: "Could you specify a timeframe (e.g., 3 months, 1 year)? This helps make the goal more concrete."
-        }
-      }
-      break
+interface GoalStructure {
+  goal: string
+  why: string
+  targetDate: string
+  milestones: {
+    title: string
+    date: string
+    tasks: string[]
+  }[]
+  recurringTasks: {
+    daily: string[]
+    weekly: string[]
   }
-  return { isValid: true }
 }
 
 export default function AIChat({ customGoalStep, setCustomGoalStep, onGoalCreated }: AIChatProps) {
@@ -59,22 +35,21 @@ export default function AIChat({ customGoalStep, setCustomGoalStep, onGoalCreate
       role: "assistant", 
       content: `Hi there! 👋 
 
-I'm here to help you create meaningful and achievable goals. At Tandem, we believe it's important to take the time to set the right goals—ones that truly matter to you and that you can actually achieve.
+I'm here to help you create a meaningful and achievable goal. Let's make it specific, measurable, and break it down into actionable steps.
 
-Let's start with something simple: What's one goal you'd like to work towards? For example:
-• "I want to learn to play the guitar"
-• "I want to run a marathon"
-• "I want to start my own business"
-
-What goal would you like to work on?` 
+What's one goal you'd like to work towards?` 
     }
   ])
   
-  const [userResponses, setUserResponses] = useState({
+  const [userResponses, setUserResponses] = useState<GoalStructure>({
     goal: '',
-    vision: '',
-    metrics: '',
-    timeline: ''
+    why: '',
+    targetDate: '',
+    milestones: [],
+    recurringTasks: {
+      daily: [],
+      weekly: []
+    }
   })
   
   const [input, setInput] = useState("")
@@ -95,196 +70,229 @@ What goal would you like to work on?`
   }
 
   const mockResponses = {
-    1: (userInput: string) => {
+    initial: (userInput: string) => {
       const goal = capitalizeFirstLetter(userInput.trim())
       return `"${goal}" is a fantastic goal! 🌟 
 
-I'd love to understand more about what success looks like for you. When you imagine achieving this goal:
-• What would be different in your life?
-• How would you feel?
-• What would you be able to do that you can't do now?
+Understanding your motivation is crucial for staying committed. Tell me:
 
-For example, if your goal is learning guitar, you might say:
-"I want to be able to play my favorite songs confidently, perform at local open mics, and share music with friends. This matters to me because music has always been a big part of my life."
-
-Share your vision with me, and we'll work together to make it happen.`
+• Why is this goal important to you personally?
+• What inspired you to choose it?
+• How will achieving it impact your life?`
     },
 
-    2: (userInput: string, previousInputs: any) => `Thank you for sharing that vision! I can see why this goal matters to you.
+    motivation: (userInput: string, previousInputs: GoalStructure) => `Your motivation is inspiring! Now let's set a target date for ${previousInputs.goal}.
 
-To help you track your progress towards ${previousInputs.goal}, let's break this down into measurable milestones. 
+${suggestTimeframe(previousInputs.goal)}
 
-Here are some example metrics based on your goal:
-${generateExampleMetrics(previousInputs.goal)}
+When would you like to achieve this goal? Pick a specific date that feels both ambitious and realistic.`,
 
-What specific metrics would be most meaningful for tracking your progress?
-Please list 2-3 concrete ways we can measure your advancement.`,
+    timeline: (userInput: string, previousInputs: GoalStructure) => {
+      const milestones = suggestMilestones(previousInputs.goal)
+      return `Great! Let's break down your journey into major milestones. These will be your key checkpoints along the way.
 
-    3: (userInput: string, previousInputs: any) => `Those are excellent metrics! They'll help you stay motivated and see your progress clearly.
+Here's a suggested progression:
+${milestones}
 
-Now, let's make this goal time-bound. Looking at what you want to achieve:
-• ${previousInputs.goal}
-• ${previousInputs.vision}
-• Tracking: ${previousInputs.metrics}
+Would these milestones work for you? Feel free to modify them or suggest your own. Include rough dates for each milestone.`
+    },
 
-What feels like a realistic timeline for achieving this? Consider:
-• Short-term (3-6 months)
-• Medium-term (6-12 months)
-• Long-term (1-2 years)
+    tasks: (userInput: string, previousInputs: GoalStructure) => `Now for the most important part - let's create your action plan!
 
-Remember, it's okay to be ambitious while still being realistic. When would you like to achieve this goal by?`,
+What specific tasks would you need to do:
 
-    4: (userInput: string, previousInputs: any) => `Perfect! Let me summarize your SMART goal:
+Daily (e.g., practice for 30 minutes):
+${suggestDailyTasks(previousInputs.goal)}
+
+Weekly (e.g., review progress, longer sessions):
+${suggestWeeklyTasks(previousInputs.goal)}
+
+List the tasks you'll commit to, separating daily and weekly tasks.`,
+
+    summary: (userInput: string, previousInputs: GoalStructure) => `Perfect! Here's your complete SMART goal plan:
 
 🎯 Goal: ${previousInputs.goal}
 
-✨ Vision of Success:
-${previousInputs.vision}
+💫 Why It Matters:
+${previousInputs.why}
 
-📊 Progress Metrics:
-${formatMetrics(previousInputs.metrics)}
+📅 Target Date: ${previousInputs.targetDate}
 
-⏱️ Timeline: ${userInput}
+🏆 Major Milestones:
+${formatMilestones(previousInputs.milestones)}
 
-I've broken this down into milestones:
-${generateMilestones(previousInputs, userInput)}
+📋 Action Plan:
+Daily Tasks:
+${formatTasks(previousInputs.recurringTasks.daily)}
 
-This is a well-structured goal that follows the SMART framework:
-• Specific: You've clearly defined what you want to achieve
-• Measurable: We have concrete ways to track progress
-• Achievable: The goal is challenging but realistic
-• Relevant: It aligns with your personal vision
-• Time-bound: You've set a clear timeline
+Weekly Tasks:
+${formatTasks(previousInputs.recurringTasks.weekly)}
 
-Would you like to adjust anything to make this goal even more meaningful or achievable for you?`
+This plan is:
+• Specific: Clear goal with defined milestones
+• Measurable: Through daily/weekly task completion
+• Achievable: Broken down into manageable steps
+• Relevant: Aligned with your personal motivation
+• Time-bound: With specific dates and deadlines
+
+Would you like to adjust anything before we add this to your dashboard?`
   }
 
-  // Helper function to generate example metrics based on the goal
-  function generateExampleMetrics(goal: string): string {
+  // Helper function to get the current response based on step
+  const getCurrentResponse = (step: number) => {
+    const steps = {
+      1: 'initial',
+      2: 'motivation',
+      3: 'timeline',
+      4: 'tasks',
+      5: 'summary'
+    } as const
+
+    return mockResponses[steps[step as keyof typeof steps]]
+  }
+
+  function suggestTimeframe(goal: string): string {
     const goalLower = goal.toLowerCase()
-    if (goalLower.includes('learn') || goalLower.includes('study')) {
-      return `• Hours spent practicing per week
-• Number of lessons/modules completed
-• Skills mastered or concepts understood
-• Practice sessions completed`
+    if (goalLower.includes('marathon')) {
+      return `For a marathon:
+• 16-20 weeks if you're already running regularly
+• 24-30 weeks if you're starting from scratch
+• Consider targeting a specific marathon event`
     }
-    if (goalLower.includes('fitness') || goalLower.includes('run') || goalLower.includes('exercise')) {
-      return `• Workouts completed per week
-• Distance covered or weights lifted
-• Time spent exercising
-• Physical measurements or progress photos`
-    }
-    if (goalLower.includes('business') || goalLower.includes('startup')) {
-      return `• Revenue milestones
-• Number of customers/clients
-• Products/services launched
-• Marketing goals achieved`
-    }
-    return `• Weekly progress measurements
-• Specific achievements or milestones
-• Time invested towards the goal
-• Tangible outcomes produced`
+    // Add more goal-specific suggestions
+    return `Consider:
+• Short term: 3-6 months
+• Medium term: 6-12 months
+• Long term: 1-2 years`
   }
 
-  // Helper function to format metrics nicely
-  function formatMetrics(metrics: string): string {
-    return metrics
-      .split(/[\n,]/)
-      .map(metric => metric.trim())
-      .filter(Boolean)
-      .map(metric => `• ${metric}`)
+  function suggestMilestones(goal: string): string {
+    const goalLower = goal.toLowerCase()
+    if (goalLower.includes('marathon')) {
+      return `1. Run 5K continuously (Month 1)
+2. Complete 10K race (Month 2)
+3. Run Half Marathon (Month 4)
+4. Complete 30K training run (Month 5)
+5. Marathon Success! (Final Month)`
+    }
+    // Add more goal-specific suggestions
+    return `Structure your milestones like:
+1. First major achievement (20% of the way)
+2. Quarter way point
+3. Halfway milestone
+4. Three-quarter mark
+5. Final goal achievement`
+  }
+
+  function suggestDailyTasks(goal: string): string {
+    const goalLower = goal.toLowerCase()
+    if (goalLower.includes('marathon')) {
+      return `• Complete scheduled training run
+• Do stretching routine
+• Log workout details
+• Track nutrition/hydration`
+    }
+    // Add more goal-specific suggestions
+    return `Examples:
+• Practice/training session
+• Progress tracking
+• Preparation tasks`
+  }
+
+  function suggestWeeklyTasks(goal: string): string {
+    const goalLower = goal.toLowerCase()
+    if (goalLower.includes('marathon')) {
+      return `• Long training run
+• Review weekly mileage
+• Plan next week's routes
+• Equipment check`
+    }
+    // Add more goal-specific suggestions
+    return `Examples:
+• Progress review
+• Planning session
+• Longer practice/training
+• Maintenance tasks`
+  }
+
+  function formatMilestones(milestones: { title: string; date: string; tasks: string[] }[]): string {
+    return milestones
+      .map((milestone, index) => `${index + 1}. ${milestone.title} (${milestone.date}): ${milestone.tasks.join(', ')}`)
       .join('\n')
   }
 
-  // Helper function to generate milestones
-  function generateMilestones(responses: typeof userResponses, timeline: string): string {
-    const metrics = responses.metrics.split(/[\n,]/).filter(Boolean)
-    const timelineMatch = timeline.match(/(\d+)\s*(day|week|month|year)s?/)
+  function formatTasks(tasks: string[]): string {
+    return tasks
+      .map((task, index) => `${index + 1}. ${task}`)
+      .join('\n')
+  }
+
+  function parseTaskInput(content: string): [string[], string[]] {
+    const lines = content.split('\n').map(line => line.trim()).filter(Boolean)
+    const daily: string[] = []
+    const weekly: string[] = []
     
-    if (!timelineMatch) return ''
-
-    const [_, number, unit] = timelineMatch
-    const totalDays = {
-      day: 1,
-      week: 7,
-      month: 30,
-      year: 365
-    }[unit] * Number(number)
-
-    const milestones = metrics.map((metric, index) => {
-      const progress = Math.round(((index + 1) / metrics.length) * 100)
-      const days = Math.round((totalDays * (index + 1)) / metrics.length)
-      return `• ${metric.trim()} (${progress}% - ${days} days)`
+    let isDaily = true // Default to daily tasks
+    
+    lines.forEach(line => {
+      if (line.toLowerCase().includes('daily:')) {
+        isDaily = true
+        return
+      }
+      if (line.toLowerCase().includes('weekly:')) {
+        isDaily = false
+        return
+      }
+      
+      // Remove bullet points and clean up the task
+      const task = line.replace(/^[•-]\s*/, '').trim()
+      if (task) {
+        if (isDaily) {
+          daily.push(task)
+        } else {
+          weekly.push(task)
+        }
+      }
     })
-
-    return milestones.join('\n')
+    
+    return [daily, weekly]
   }
 
   async function sendMessage(content: string) {
     try {
-      // Validate input
-      const validation = validateInput(content, customGoalStep)
-      if (!validation.isValid) {
-        setMessages(prev => [...prev, 
-          { role: "user", content },
-          { role: "assistant", content: validation.message! }
-        ])
-        setInput("")
-        return
-      }
-
       setIsLoading(true)
       setMessages(prev => [...prev, { role: "user", content }])
       setInput("")
 
-      // Update userResponses based on the current step
       const updatedResponses = { ...userResponses }
       switch (customGoalStep) {
         case 1:
           updatedResponses.goal = content
           break
         case 2:
-          updatedResponses.vision = content
+          updatedResponses.why = content
           break
         case 3:
-          updatedResponses.metrics = content
+          updatedResponses.targetDate = content
           break
         case 4:
-          updatedResponses.timeline = content
+          // Parse tasks into daily and weekly
+          const [daily, weekly] = parseTaskInput(content)
+          updatedResponses.recurringTasks.daily = daily
+          updatedResponses.recurringTasks.weekly = weekly
           break
       }
       setUserResponses(updatedResponses)
 
-      // Get contextual response using the object lookup
-      const responseFunction = mockResponses[customGoalStep as keyof typeof mockResponses]
+      const responseFunction = getCurrentResponse(customGoalStep)
       const mockResponse = responseFunction(content, updatedResponses)
       
-      // Simulate typing delay
       setTimeout(() => {
         setMessages(prev => [...prev, { role: "assistant", content: mockResponse }])
-        if (validation.isValid) {
-          setCustomGoalStep(customGoalStep + 1)
-        }
+        setCustomGoalStep(customGoalStep + 1)
         
-        if (customGoalStep === 4 && validation.isValid) {
-          const milestones = generateMilestones(updatedResponses, content)
-            .split('\n')
-            .map(milestone => {
-              const [title, timing] = milestone.split('(')
-              return {
-                title: title.replace('•', '').trim(),
-                deadline: timing?.replace(')', '').trim() || '',
-                tasks: ["To be defined"]
-              }
-            })
-
-          onGoalCreated?.({
-            goal: updatedResponses.goal,
-            vision: updatedResponses.vision,
-            metrics: updatedResponses.metrics.split(/[\n,]/).filter(Boolean),
-            timeline: updatedResponses.timeline,
-            milestones
-          })
+        if (customGoalStep === 5) {
+          onGoalCreated?.(updatedResponses)
         }
       }, 1500)
 
@@ -297,6 +305,15 @@ Would you like to adjust anything to make this goal even more meaningful or achi
     } finally {
       setIsLoading(false)
     }
+  }
+
+  function calculateMilestoneDate(targetDate: string, index: number, totalMilestones: number): string {
+    const endDate = new Date(targetDate)
+    const totalDays = Math.floor((endDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    const daysPerMilestone = totalDays / totalMilestones
+    const milestoneDate = new Date()
+    milestoneDate.setDate(milestoneDate.getDate() + Math.floor(daysPerMilestone * (index + 1)))
+    return milestoneDate.toISOString().split('T')[0]
   }
 
   return (
