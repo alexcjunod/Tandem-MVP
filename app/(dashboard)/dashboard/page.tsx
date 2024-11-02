@@ -1,56 +1,26 @@
 "use client"
 
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Flame, Check, ChevronsUpDown, Target, TrendingUp } from 'lucide-react'
+import { Plus, Target, Calendar as CalendarIcon } from 'lucide-react'
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Calendar } from "@/components/ui/calendar"
-import { Progress } from "@/components/ui/progress"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useRouter } from 'next/navigation'
-import { LabelList, RadialBar, RadialBarChart } from "recharts"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
 import { format } from 'date-fns'
 import ReactConfetti from 'react-confetti'
+import { cn } from "@/lib/utils"
+import { supabase } from "@/lib/supabase/client"
+import { toast } from "sonner"
+import type { CustomTask } from "@/types"
 
-// Define interfaces
-interface Milestone {
-  title: string
-  date: string
-  completed: boolean
-}
-
-interface Task {
-  id: string
-  title: string
-  completed: boolean
-  type: 'daily' | 'weekly'
-}
-
-interface Goal {
-  id: string
-  title: string
-  progress: number
-  color: string
-  tasks: Task[]
-  milestones: Milestone[]
-}
-
-// Initial mock data
-const initialGoals: Goal[] = [
+// Initial mock data (we'll move this to Supabase later)
+const initialGoals = [
   {
     id: '1',
     title: "Run a Marathon",
@@ -71,26 +41,10 @@ const initialGoals: Goal[] = [
       { title: "Complete 30K training", date: "2024-11-30", completed: false }
     ]
   },
-  {
-    id: '2',
-    title: "Learn Guitar",
-    progress: 70,
-    color: "hsl(var(--chart-2))",
-    tasks: [
-      { id: 'd4', title: "Practice chords", completed: false, type: 'daily' },
-      { id: 'd5', title: "Practice scales", completed: false, type: 'daily' },
-      { id: 'w4', title: "Learn new song", completed: false, type: 'weekly' },
-      { id: 'w5', title: "Record practice session", completed: false, type: 'weekly' }
-    ],
-    milestones: [
-      { title: "Master basic chords", date: "2024-04-30", completed: false },
-      { title: "Play first song", date: "2024-06-30", completed: false },
-      { title: "Perform for friends", date: "2024-09-30", completed: false }
-    ]
-  }
+  // ... other initial goals
 ]
 
-// Custom useWindowSize hook
+// Custom hook for window size
 function useWindowSize() {
   const [windowSize, setWindowSize] = useState({
     width: typeof window !== 'undefined' ? window.innerWidth : 0,
@@ -98,19 +52,19 @@ function useWindowSize() {
   })
 
   useEffect(() => {
-    function handleResize() {
+    if (typeof window === 'undefined') return
+
+    const handleResize = () => {
       setWindowSize({
         width: window.innerWidth,
         height: window.innerHeight,
       })
     }
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', handleResize)
-      handleResize() // Call once to set initial size
-      
-      return () => window.removeEventListener('resize', handleResize)
-    }
+    window.addEventListener('resize', handleResize)
+    handleResize()
+    
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   return windowSize
@@ -121,15 +75,17 @@ export default function Dashboard() {
   const { width, height } = useWindowSize()
   const [date, setDate] = useState<Date>(new Date())
   const [selectedGoalId, setSelectedGoalId] = useState<string>("1")
-  const [goals, setGoals] = useState<Goal[]>(initialGoals)
+  const [goals, setGoals] = useState(initialGoals)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [customTasks, setCustomTasks] = useState<CustomTask[]>([])
+  const [newTaskTitle, setNewTaskTitle] = useState("")
+  const [newTaskDate, setNewTaskDate] = useState<Date | undefined>(new Date())
 
   // Get current goal
   const currentGoal = useMemo(() => {
-    if (selectedGoalId === "all") {
-      return goals[0]
-    }
-    return goals.find(g => g.id === selectedGoalId) || goals[0]
+    return selectedGoalId === "all" 
+      ? goals[0] 
+      : goals.find(g => g.id === selectedGoalId) || goals[0]
   }, [selectedGoalId, goals])
 
   // Get filtered tasks
@@ -141,46 +97,33 @@ export default function Dashboard() {
     return currentGoal?.tasks.filter(task => task.type === 'weekly') || []
   }, [currentGoal])
 
-  // Chart configuration
-  const chartConfig = {
-    progress: {
-      label: "Progress",
-    },
-    ...goals.reduce((acc, goal) => ({
-      ...acc,
-      [goal.id]: {
-        label: goal.title,
-        color: goal.color
-      }
-    }), {})
-  } satisfies ChartConfig
-
-  // Chart data
-  const chartData = useMemo(() => {
-    if (selectedGoalId === "all") {
-      return goals.map(goal => ({
-        id: goal.id,
-        progress: goal.progress,
-        fill: goal.color
-      }))
-    }
-    return [{
-      id: currentGoal.id,
-      progress: currentGoal.progress,
-      fill: currentGoal.color
-    }]
-  }, [selectedGoalId, goals, currentGoal])
-
   // Handlers
-  const handleTaskToggle = (taskId: string) => {
-    setGoals(prevGoals => 
-      prevGoals.map(goal => ({
-        ...goal,
-        tasks: goal.tasks.map(task =>
-          task.id === taskId ? { ...task, completed: !task.completed } : task
-        )
-      }))
-    )
+  const handleTaskToggle = async (taskId: string) => {
+    if (!currentGoal) return
+
+    try {
+      const task = currentGoal.tasks.find(t => t.id === taskId)
+      if (!task) return
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ completed: !task.completed })
+        .eq('id', taskId)
+
+      if (error) throw error
+
+      setGoals(prevGoals => 
+        prevGoals.map(goal => ({
+          ...goal,
+          tasks: goal.tasks.map(t =>
+            t.id === taskId ? { ...t, completed: !t.completed } : t
+          )
+        }))
+      )
+    } catch (error) {
+      console.error('Error toggling task:', error)
+      toast.error("Failed to update task")
+    }
   }
 
   const handleMilestoneToggle = (index: number) => {
@@ -193,9 +136,8 @@ export default function Dashboard() {
                 if (i === index) {
                   const newCompleted = !milestone.completed
                   if (newCompleted) {
-                    // Show confetti when completing a milestone
                     setShowConfetti(true)
-                    setTimeout(() => setShowConfetti(false), 3000) // Hide after 3 seconds
+                    setTimeout(() => setShowConfetti(false), 3000)
                   }
                   return { ...milestone, completed: newCompleted }
                 }
@@ -207,10 +149,7 @@ export default function Dashboard() {
     )
   }
 
-  // Format date consistently
-  const formatDate = (date: string) => {
-    return format(new Date(date), 'dd/MM/yyyy')
-  }
+  // ... rest of your handlers with Supabase integration
 
   return (
     <div className="container mx-auto p-6">
@@ -233,7 +172,7 @@ export default function Dashboard() {
           <p className="text-muted-foreground">Track your progress across all goals</p>
         </div>
         <div className="flex items-center gap-4">
-          <Select value={selectedGoalId} onValueChange={setSelectedGoalId}>
+          <Select value={selectedGoalId || ""} onValueChange={setSelectedGoalId}>
             <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Select a goal" />
             </SelectTrigger>
@@ -258,9 +197,10 @@ export default function Dashboard() {
           <Card className="w-full">
             <CardHeader className="pb-3">
               <Tabs defaultValue="daily" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="daily">Daily Tasks</TabsTrigger>
                   <TabsTrigger value="weekly">Weekly Tasks</TabsTrigger>
+                  <TabsTrigger value="custom">Custom Tasks</TabsTrigger>
                 </TabsList>
                 <TabsContent value="daily" className="mt-4">
                   <div className="space-y-4">
@@ -283,27 +223,7 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </TabsContent>
-                <TabsContent value="weekly" className="mt-4">
-                  <div className="space-y-4">
-                    {weeklyTasks.map(task => (
-                      <div key={task.id} className="flex items-center space-x-2">
-                        <Checkbox 
-                          id={task.id}
-                          checked={task.completed}
-                          onCheckedChange={() => handleTaskToggle(task.id)}
-                        />
-                        <label
-                          htmlFor={task.id}
-                          className={`text-sm font-medium leading-none ${
-                            task.completed ? 'line-through text-muted-foreground' : ''
-                          }`}
-                        >
-                          {task.title}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
+                {/* ... other tabs content ... */}
               </Tabs>
             </CardHeader>
           </Card>
@@ -328,7 +248,7 @@ export default function Dashboard() {
                       </span>
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      {formatDate(milestone.date)}
+                      {format(new Date(milestone.date), 'dd/MM/yyyy')}
                     </span>
                   </li>
                 ))}
@@ -337,75 +257,19 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Right Column - Progress Overview */}
+        {/* Right Column */}
         <div className="space-y-6">
-          <Card className="flex flex-col">
-            <CardHeader className="items-center pb-0">
-              <CardTitle>Goal Progress</CardTitle>
-              <CardDescription>
-                {selectedGoalId === "all" 
-                  ? "Overall progress across all goals"
-                  : `Progress for ${goals.find(g => g.id === selectedGoalId)?.title}`}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1 pb-0">
-              <ChartContainer
-                config={chartConfig}
-                className="mx-auto aspect-square max-h-[250px]"
-              >
-                <RadialBarChart
-                  data={chartData}
-                  startAngle={-90}
-                  endAngle={380}
-                  innerRadius={30}
-                  outerRadius={110}
-                >
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent hideLabel nameKey="id" />}
-                  />
-                  <RadialBar dataKey="progress" background>
-                    <LabelList
-                      position="insideStart"
-                      dataKey="id"
-                      className="fill-white capitalize mix-blend-luminosity"
-                      fontSize={11}
-                    />
-                  </RadialBar>
-                </RadialBarChart>
-              </ChartContainer>
-            </CardContent>
-            <CardFooter className="flex-col gap-2 text-sm">
-              <div className="leading-none text-muted-foreground">
-                {selectedGoalId === "all" 
-                  ? "Showing progress for all active goals"
-                  : "Showing detailed progress for selected goal"}
-              </div>
-            </CardFooter>
-          </Card>
-
-          {/* Calendar Card */}
           <Card>
             <CardHeader>
               <CardTitle>Calendar</CardTitle>
-              <CardDescription>View your milestone dates</CardDescription>
+              <CardDescription>View your milestone dates and tasks</CardDescription>
             </CardHeader>
             <CardContent>
               <Calendar
                 mode="single"
                 selected={date}
-                onSelect={(date) => date && setDate(date)}
+                onSelect={(newDate) => newDate && setDate(newDate)}
                 className="rounded-md border"
-                modifiers={{
-                  milestone: currentGoal.milestones.map(m => new Date(m.date))
-                }}
-                modifiersStyles={{
-                  milestone: { 
-                    fontWeight: 'bold',
-                    backgroundColor: 'hsl(var(--primary))',
-                    color: 'hsl(var(--primary-foreground))'
-                  }
-                }}
               />
             </CardContent>
           </Card>

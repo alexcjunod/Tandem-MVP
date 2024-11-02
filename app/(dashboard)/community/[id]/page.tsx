@@ -35,7 +35,15 @@ interface Community {
   post_count: number
 }
 
-export default function CommunityPage({ params }: { params: { id: string } }) {
+interface PageProps {
+  params: {
+    id: string
+  }
+}
+
+export default async function CommunityPage({ params }: PageProps) {
+  const { id } = params
+
   const { user, isLoaded: isUserLoaded } = useUser()
   const [community, setCommunity] = useState<Community | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
@@ -53,7 +61,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
         const { data: communityData, error: communityError } = await supabase
           .from('communities')
           .select('*')
-          .eq('id', params.id)
+          .eq('id', id)
           .single()
 
         if (communityError) throw communityError
@@ -64,7 +72,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
           const { data: memberData } = await supabase
             .from('community_members')
             .select('*')
-            .eq('community_id', params.id)
+            .eq('community_id', id)
             .eq('user_id', user.id)
             .single()
 
@@ -81,7 +89,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
               avatar_url
             )
           `)
-          .eq('community_id', params.id)
+          .eq('community_id', id)
           .order('created_at', { ascending: false })
 
         if (postsError) throw postsError
@@ -95,7 +103,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
     }
 
     initialize()
-  }, [params.id, user, isUserLoaded])
+  }, [id, user, isUserLoaded])
 
   // Handle joining/leaving community
   const handleMembershipToggle = async () => {
@@ -109,7 +117,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
         const { error } = await supabase
           .from('community_members')
           .delete()
-          .eq('community_id', params.id)
+          .eq('community_id', id)
           .eq('user_id', user.id)
 
         if (error) throw error
@@ -119,7 +127,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
         const { error } = await supabase
           .from('community_members')
           .insert({
-            community_id: params.id,
+            community_id: id,
             user_id: user.id
           })
 
@@ -131,7 +139,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
       const { data: updatedCommunity } = await supabase
         .from('communities')
         .select('*')
-        .eq('id', params.id)
+        .eq('id', id)
         .single()
 
       if (updatedCommunity) {
@@ -173,7 +181,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
         .from('posts')
         .insert({
           content: newPost.content,
-          community_id: params.id,
+          community_id: id,
           user_id: user.id
         })
         .select(`
@@ -215,7 +223,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
             avatar_url
           )
         `)
-        .eq('community_id', params.id)
+        .eq('community_id', id)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -232,7 +240,7 @@ export default function CommunityPage({ params }: { params: { id: string } }) {
   // Add this to your useEffect
   useEffect(() => {
     fetchPosts()
-  }, [params.id])
+  }, [id])
 
   if (isLoading || !isUserLoaded) return <div>Loading...</div>
   if (!community) return <div>Community not found</div>

@@ -5,7 +5,6 @@ export interface Community {
   color: string
   member_count: number
   post_count: number
-  created_at: string
 }
 
 export interface Post {
@@ -16,7 +15,6 @@ export interface Post {
   likes: number
   comments: number
   created_at: string
-  image_url?: string
   author?: {
     full_name: string
     avatar_url: string

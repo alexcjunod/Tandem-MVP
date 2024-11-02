@@ -255,3 +255,9 @@ my-app/
    - Phase 2: Onboarding and SMART goal creation
    - Phase 3: Goal tracking with task lists and visualization
    - Phase 4: Community engagement features
+
+
+
+   # Notes
+
+   * Ability to add any task to the daily list and add for any date in the calendar. 

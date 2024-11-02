@@ -1,19 +1,21 @@
-import { SignUp } from "@clerk/nextjs";
+"use client"
 
-export default function Page() {
+import * as React from "react"
+import { SignUp } from "@clerk/nextjs"
+
+export default function SignUpPage() {
   return (
-    <div className="w-full max-w-md">
-      <SignUp 
+    <div className="flex min-h-screen items-center justify-center">
+      <SignUp
+        afterSignUpUrl="/dashboard"
+        signInUrl="/sign-in"
         appearance={{
           elements: {
             rootBox: "mx-auto",
-            card: "shadow-xl border rounded-lg",
-          },
+            card: "shadow-none"
+          }
         }}
-        routing="path"
-        path="/sign-up"
-        afterSignUpUrl="/dashboard"
       />
     </div>
-  );
+  )
 } 
