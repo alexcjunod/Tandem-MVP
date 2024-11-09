@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase/client"
 import { toast } from "sonner"
 import type { Comment } from "@/types"
 import { PostCreation } from "@/components/community/post-creation"
-import { PostCard } from "@/components/community/post-card"
+import { CommentSection } from "@/components/community/comment-section"
 
 interface Community {
   id: number
@@ -40,101 +40,68 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([])
   const [joinedCommunities, setJoinedCommunities] = useState<number[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [newPost, setNewPost] = useState({ content: "", communityId: null as number | null })
   const [isLoading, setIsLoading] = useState<{ [key: number]: boolean }>({})
   const [likedPosts, setLikedPosts] = useState<number[]>([])
   const [showComments, setShowComments] = useState<number | null>(null)
   const [comments, setComments] = useState<{ [key: number]: Comment[] }>({})
+  const [initialLoading, setInitialLoading] = useState(true)
 
-  // Fetch initial data
-  const fetchPosts = async () => {
-    try {
-      console.log('Fetching posts...')
-      const { data: postsData, error } = await supabase
-        .from('posts')
-        .select(`
-          id,
-          content,
-          community_id,
-          user_id,
-          author_name,
-          likes,
-          comments,
-          created_at,
-          communities:community_id (
-            id,
-            name,
-            color
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      console.log('Posts Data:', postsData)
-      
-      if (error) {
-        console.error('Error fetching posts:', error)
-        return
-      }
-
-      if (postsData) {
-        setPosts(postsData)
-        console.log('Posts State Updated:', postsData)
-      }
-    } catch (error) {
-      console.error('Error fetching posts:', error)
-    }
-  }
-
+  // Fetch communities and posts
   useEffect(() => {
     async function fetchData() {
       try {
-        console.log('Fetching data...')
-        
-        // Fetch communities
-        const { data: communitiesData, error: communitiesError } = await supabase
+        const { data: communitiesData } = await supabase
           .from('communities')
           .select('*')
           .order('member_count', { ascending: false })
-
-        console.log('Communities Data:', communitiesData)
-        console.log('Communities Error:', communitiesError)
-
-        // Fetch posts
-        await fetchPosts()
 
         if (communitiesData) {
           setCommunities(communitiesData)
         }
 
-        // Log state after setting
-        console.log('Communities State:', communities)
-        console.log('Posts State:', posts)
+        const { data: postsData } = await supabase
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20)
 
-        // Fetch joined communities if user is logged in
-        if (user) {
-          const { data: joinedData } = await supabase
-            .from('community_members')
-            .select('community_id')
-            .eq('user_id', user.id)
-
-          if (joinedData) {
-            setJoinedCommunities(joinedData.map(d => d.community_id))
-          }
+        if (postsData) {
+          setPosts(postsData)
         }
       } catch (error) {
         console.error('Error fetching data:', error)
       } finally {
-        setIsLoading({})  // Fixed: Initialize with empty object instead of false
+        setInitialLoading(false)
       }
     }
 
     fetchData()
-  }, [user])
+  }, [])
 
   // Filter communities based on search
   const filteredCommunities = communities.filter(community =>
     community.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     community.description.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  // Fetch joined communities when component mounts
+  useEffect(() => {
+    async function fetchJoinedCommunities() {
+      if (!user) return
+      
+      const { data } = await supabase
+        .from('community_members')
+        .select('community_id')
+        .eq('user_id', user.id)
+
+      if (data) {
+        setJoinedCommunities(data.map(member => member.community_id))
+      }
+    }
+
+    fetchJoinedCommunities()
+  }, [user])
 
   // Handle joining/leaving community with loading state and notifications
   const handleJoinCommunity = async (communityId: number) => {
@@ -192,29 +159,42 @@ export default function CommunityPage() {
     }
 
     try {
+      // Log the attempt
+      console.log('Attempting to create post:', {
+        content,
+        communityId,
+        userId: user.id,
+        authorName: user.fullName
+      })
+
+      // Create the post
       const { data, error } = await supabase
         .from('posts')
         .insert({
           content,
           community_id: communityId,
           user_id: user.id,
-          author_name: user.fullName || 'Anonymous',
-          likes: 0,
-          comments: 0
+          author_name: user.fullName || 'Anonymous'
         })
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error.message)
+        toast.error(error.message)
+        return
+      }
 
-      setPosts(current => [data, ...current])
-      toast.success('Post created successfully!')
-      
-      // Fetch posts again to ensure we have the latest data
-      fetchPosts()
-    } catch (error) {
-      console.error('Error creating post:', error)
-      toast.error('Failed to create post')
+      if (data) {
+        console.log('Post created successfully:', data)
+        setPosts(current => [data, ...current])
+        toast.success('Post created successfully!')
+        return data
+      }
+    } catch (error: any) {
+      console.error('Error creating post:', error?.message || error)
+      toast.error('Failed to create post. Please try again.')
+      throw error
     }
   }
 
@@ -238,7 +218,7 @@ export default function CommunityPage() {
     }
   }, [user])
 
-  // Handle like functionality
+  // Update handleLike function
   const handleLike = async (postId: number) => {
     if (!user) {
       toast.error("Please sign in to like posts")
@@ -247,31 +227,48 @@ export default function CommunityPage() {
 
     try {
       if (likedPosts.includes(postId)) {
-        // Unlike
-        await supabase
+        // Unlike post
+        const { error: unlikeError } = await supabase
           .from('post_likes')
           .delete()
           .eq('post_id', postId)
           .eq('user_id', user.id)
 
+        if (unlikeError) throw unlikeError
+
+        // Update local state
         setLikedPosts(prev => prev.filter(id => id !== postId))
+        setPosts(prev => 
+          prev.map(post => 
+            post.id === postId 
+              ? { ...post, likes: Math.max(0, post.likes - 1) }
+              : post
+          )
+        )
       } else {
-        // Like
-        await supabase
+        // Like post
+        const { error: likeError } = await supabase
           .from('post_likes')
           .insert({
             post_id: postId,
             user_id: user.id
           })
 
-        setLikedPosts(prev => [...prev, postId])
-      }
+        if (likeError) throw likeError
 
-      // Refresh posts
-      fetchPosts()
+        // Update local state
+        setLikedPosts(prev => [...prev, postId])
+        setPosts(prev => 
+          prev.map(post => 
+            post.id === postId 
+              ? { ...post, likes: post.likes + 1 }
+              : post
+          )
+        )
+      }
     } catch (error) {
-      console.error('Error:', error)
-      toast.error("Failed to update like")
+      console.error('Error toggling like:', error)
+      toast.error("Failed to update like. Please try again.")
     }
   }
 
@@ -338,54 +335,21 @@ export default function CommunityPage() {
 
   // Set up real-time subscriptions
   useEffect(() => {
-    // Subscribe to new posts
     const postsChannel = supabase
       .channel('public:posts')
       .on('postgres_changes', {
-        event: '*',
+        event: 'INSERT',
         schema: 'public',
         table: 'posts'
-      }, async (payload) => {
-        console.log('Real-time update:', payload)
-        // Fetch all posts again when there's a change
-        await fetchPosts()
+      }, payload => {
+        setPosts(current => [payload.new as any, ...current])
       })
       .subscribe()
 
-    // Fetch initial posts
-    fetchPosts()
-
-    // Cleanup subscription
     return () => {
       supabase.removeChannel(postsChannel)
     }
   }, [])
-
-  // Add this useEffect after your other useEffects
-  useEffect(() => {
-    const postsChannel = supabase
-      .channel('custom-channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'posts',
-        },
-        (payload) => {
-          console.log('Change received!', payload)
-          fetchPosts() // Refresh posts when changes occur
-        }
-      )
-      .subscribe()
-
-    // Initial fetch
-    fetchPosts()
-
-    return () => {
-      supabase.removeChannel(postsChannel)
-    }
-  }, []) // Empty dependency array
 
   return (
     <div className="container mx-auto p-6">
@@ -416,20 +380,55 @@ export default function CommunityPage() {
             <CardContent>
               <ScrollArea className="h-[600px]">
                 <div className="space-y-4">
-                  {posts.map((post) => {
-                    const community = communities.find(c => c.id === post.community_id)
-                    if (!community) return null // Skip if community not found
-                    
-                    return (
-                      <PostCard
-                        key={post.id}
-                        post={post}
-                        community={community}
-                        isLiked={likedPosts.includes(post.id)}
-                        onLike={handleLike}
-                      />
-                    )
-                  })}
+                  {posts.map((post) => (
+                    <Card key={post.id}>
+                      <CardContent className="pt-6">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">{post.author_name}</span>
+                            {communities.find(c => c.id === post.community_id) && (
+                              <Badge 
+                                variant="outline" 
+                                className="hover:bg-primary hover:text-primary-foreground transition-colors"
+                              >
+                                {communities.find(c => c.id === post.community_id)?.name}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm">{post.content}</p>
+                          <div className="flex gap-4">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handleLike(post.id)}
+                              className={likedPosts.includes(post.id) ? 'text-red-500' : ''}
+                            >
+                              <Heart className="mr-1 h-4 w-4" />
+                              {post.likes || 0}
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleShowComments(post.id)}
+                            >
+                              <MessageCircle className="mr-1 h-4 w-4" />
+                              {post.comments}
+                            </Button>
+                          </div>
+                          
+                          {showComments === post.id && (
+                            <div className="mt-4">
+                              <CommentSection
+                                postId={post.id}
+                                comments={comments[post.id] || []}
+                                onAddComment={(content) => handleAddComment(post.id, content)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </ScrollArea>
             </CardContent>

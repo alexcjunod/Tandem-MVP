@@ -2,7 +2,7 @@
 
 import React from "react"
 import Link from "next/link"
-import { UserButton, useUser } from "@clerk/nextjs"
+import { UserButton } from "@clerk/nextjs"
 import { Home, Users, Settings } from "lucide-react"
 
 const sidebarLinks = [
@@ -16,8 +16,6 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user } = useUser()
-
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -42,13 +40,7 @@ export default function DashboardLayout({
             })}
           </nav>
           <div className="border-t p-4">
-            <div className="flex items-center gap-3">
-              <UserButton afterSignOutUrl="/" />
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{user?.fullName}</span>
-                <span className="text-xs text-muted-foreground">{user?.emailAddresses[0].emailAddress}</span>
-              </div>
-            </div>
+            <UserButton afterSignOutUrl="/" />
           </div>
         </div>
       </aside>

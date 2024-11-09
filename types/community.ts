@@ -11,14 +11,22 @@ export interface Post {
   id: number
   content: string
   community_id: number
-  user_id: string
+  author_name: string
   likes: number
   comments: number
   created_at: string
-  author?: {
+  image_url?: string
+  profiles?: {
     full_name: string
     avatar_url: string
   }
+}
+
+export interface Comment {
+  id: number
+  content: string
+  author_name: string
+  created_at: string
 }
 
 export interface Profile {

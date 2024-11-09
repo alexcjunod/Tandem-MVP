@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Heart, MessageCircle } from "lucide-react"
 import { useUser } from "@clerk/nextjs"
 import { supabase } from "@/lib/supabase/client"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
 interface Comment {
   id: number
@@ -25,6 +26,9 @@ interface PostCardProps {
     likes: number
     comments: number
     community_id: number
+    profiles?: {
+      avatar_url: string
+    }
   }
   community: {
     name: string
@@ -87,13 +91,37 @@ export function PostCard({ post, community, isLiked, onLike }: PostCardProps) {
     }
   }
 
+  const getCommunityBadgeClass = (color: string) => {
+    switch (color) {
+      case 'bg-red-500':
+        return 'bg-red-500 text-white'
+      case 'bg-blue-500':
+        return 'bg-blue-500 text-white'
+      case 'bg-green-500':
+        return 'bg-green-500 text-white'
+      default:
+        return 'bg-gray-500 text-white'
+    }
+  }
+
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="space-y-4">
           <div className="flex items-center gap-2">
+            <Avatar className="h-8 w-8">
+              <AvatarImage 
+                src={user?.imageUrl || `https://avatar.vercel.sh/${post.author_name}`} 
+                alt={post.author_name} 
+              />
+              <AvatarFallback>
+                {post.author_name.slice(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
             <span className="font-semibold">{post.author_name}</span>
-            <Badge className={community.color}>
+            <Badge 
+              className={getCommunityBadgeClass(community.color)}
+            >
               {community.name}
             </Badge>
           </div>
